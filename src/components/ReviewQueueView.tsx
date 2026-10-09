@@ -32,14 +32,23 @@ export function ReviewQueueView({
 }: ReviewQueueViewProps) {
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [deckTab, setDeckTab] = useState<'due' | 'early'>('due');
 
   const nowMs = Date.now();
   const dueTopics = topics
     .filter((t) => t.next_review_at && new Date(t.next_review_at).getTime() <= nowMs)
     .sort((a, b) => (a.priority - b.priority) || (new Date(a.next_review_at!).getTime() - new Date(b.next_review_at!).getTime()));
 
+  const completedTopics = topics
+    .filter((t) => t.status === 'completed' || t.status === 'mastered' || t.times_reviewed > 0)
+    .sort((a, b) => (a.priority - b.priority) || (a.box - b.box));
+
   // Active topic for flashcard
-  const activeTopic = topics.find((t) => t.id === selectedTopicId) || dueTopics[0] || null;
+  const activeTopic =
+    topics.find((t) => t.id === selectedTopicId) ||
+    (deckTab === 'due' ? dueTopics[0] : completedTopics[0]) ||
+    (dueTopics.length > 0 ? dueTopics[0] : completedTopics[0]) ||
+    null;
 
   // Leitner box count distribution
   const boxCounts = [1, 2, 3, 4, 5].map((box) => ({
@@ -55,10 +64,11 @@ export function ReviewQueueView({
       triggerConfetti();
     }
     setShowAnswer(false);
-    // Auto advance to next due topic
-    const remainingDue = dueTopics.filter((t) => t.id !== activeTopic.id);
-    if (remainingDue.length > 0) {
-      setSelectedTopicId(remainingDue[0].id);
+    // Auto advance to next topic in current list
+    const currentList = deckTab === 'due' ? dueTopics : completedTopics;
+    const remaining = currentList.filter((t) => t.id !== activeTopic.id);
+    if (remaining.length > 0) {
+      setSelectedTopicId(remaining[0].id);
     } else {
       setSelectedTopicId(null);
     }
@@ -137,6 +147,11 @@ export function ReviewQueueView({
                     <span className="text-xs font-mono text-slate-400">
                       Current Box: <strong>Box {activeTopic.box}</strong>
                     </span>
+                    {activeTopic.next_review_at && new Date(activeTopic.next_review_at).getTime() > nowMs && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                        Early Review
+                      </span>
+                    )}
                     <button
                       onClick={() => onOpenTopic(activeTopic)}
                       className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
@@ -246,8 +261,22 @@ export function ReviewQueueView({
                 Queue Completely Finished!
               </h3>
               <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                All scheduled spaced revisions for today have been conquered. Check back tomorrow or pick any topic from the list to review early!
+                All scheduled spaced revisions for today have been conquered. Check back tomorrow or pick any completed topic from the list to review early!
               </p>
+              {completedTopics.length > 0 && (
+                <div className="mt-4">
+                  <button
+                    onClick={() => {
+                      setDeckTab('early');
+                      setSelectedTopicId(completedTopics[0].id);
+                      setShowAnswer(false);
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+                  >
+                    Practice Completed Topics Early ({completedTopics.length}) →
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -255,18 +284,86 @@ export function ReviewQueueView({
         {/* Right: Review Queue List & History */}
         <div className="space-y-4">
           <div className="p-4 rounded-2xl border border-slate-800/90 bg-[#0c0e15] space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-              <span>Today&apos;s Deck ({dueTopics.length})</span>
-              <RotateCw className="w-3.5 h-3.5 text-slate-500" />
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <span>Deck Queue</span>
+                <RotateCw className="w-3.5 h-3.5 text-slate-500" />
+              </h3>
 
-            {dueTopics.length === 0 ? (
+              {/* Deck selector toggle */}
+              <div className="flex items-center p-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px]">
+                <button
+                  onClick={() => {
+                    setDeckTab('due');
+                    if (dueTopics.length > 0) setSelectedTopicId(dueTopics[0].id);
+                    else setSelectedTopicId(null);
+                    setShowAnswer(false);
+                  }}
+                  className={`px-2 py-0.5 rounded font-medium transition-all ${
+                    deckTab === 'due'
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Due ({dueTopics.length})
+                </button>
+                <button
+                  onClick={() => {
+                    setDeckTab('early');
+                    if (completedTopics.length > 0) setSelectedTopicId(completedTopics[0].id);
+                    setShowAnswer(false);
+                  }}
+                  className={`px-2 py-0.5 rounded font-medium transition-all ${
+                    deckTab === 'early'
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Early ({completedTopics.length})
+                </button>
+              </div>
+            </div>
+
+            {deckTab === 'due' ? (
+              dueTopics.length === 0 ? (
+                <div className="text-xs text-slate-500 py-4 text-center">
+                  No pending cards due today.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {dueTopics.map((topic) => (
+                    <div
+                      key={topic.id}
+                      onClick={() => {
+                        setSelectedTopicId(topic.id);
+                        setShowAnswer(false);
+                      }}
+                      className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all ${
+                        activeTopic?.id === topic.id
+                          ? 'border-indigo-500/60 bg-indigo-950/20 text-white'
+                          : 'border-slate-800 hover:border-slate-700 bg-slate-900/40 text-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold truncate">{topic.title}</span>
+                        <span className="text-[10px] font-mono text-slate-500">
+                          Box {topic.box}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 truncate">
+                        {topic.category}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : completedTopics.length === 0 ? (
               <div className="text-xs text-slate-500 py-4 text-center">
-                No pending cards due today.
+                No completed topics yet. Mark topics completed in DSA or System Design to practice them here!
               </div>
             ) : (
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {dueTopics.map((topic) => (
+                {completedTopics.map((topic) => (
                   <div
                     key={topic.id}
                     onClick={() => {
@@ -281,12 +378,17 @@ export function ReviewQueueView({
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-semibold truncate">{topic.title}</span>
-                      <span className="text-[10px] font-mono text-slate-500">
+                      <span className="text-[10px] font-mono text-indigo-400">
                         Box {topic.box}
                       </span>
                     </div>
-                    <div className="text-[10px] text-slate-500 truncate">
-                      {topic.category}
+                    <div className="flex items-center justify-between text-[10px] text-slate-500">
+                      <span className="truncate">{topic.category}</span>
+                      {topic.next_review_at && (
+                        <span className="font-mono text-[9px] text-slate-400">
+                          Due {formatDate(topic.next_review_at)}
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}

@@ -169,8 +169,21 @@ export async function supabaseUpdateTopic(
     completedAt = null;
   }
 
+  // Auto-schedule spaced review when marked completed or mastered if next_review_at is not set
+  let nextReviewAt = updates.next_review_at;
+  if (
+    (updates.status === 'completed' || updates.status === 'mastered') &&
+    !current.next_review_at &&
+    nextReviewAt === undefined
+  ) {
+    nextReviewAt = calculateNextReview(Date.now(), current.box || 1);
+  } else if (updates.status === 'pending' && nextReviewAt === undefined) {
+    nextReviewAt = null;
+  }
+
   const payload: Record<string, unknown> = {
     ...updates,
+    ...(nextReviewAt !== undefined ? { next_review_at: nextReviewAt } : {}),
     completed_at: completedAt,
     updated_at: now,
   };
@@ -250,9 +263,17 @@ export async function supabaseRecordTopicReview(
 
   // 2. Update topic metadata
   let newStatus = topic.status;
-  if (newStatus === 'pending') newStatus = 'in_progress';
-  if (nextBox >= 4 && confidence >= 4) newStatus = 'mastered';
-  else if (newStatus !== 'mastered') newStatus = 'completed';
+  if (outcome === 'forgot') {
+    newStatus = 'in_progress';
+  } else if (nextBox >= 4 && confidence >= 4) {
+    newStatus = 'mastered';
+  } else if (newStatus === 'mastered' && nextBox < 4) {
+    newStatus = 'completed';
+  } else if (newStatus === 'pending') {
+    newStatus = 'in_progress';
+  } else {
+    newStatus = 'completed';
+  }
 
   const { data: updatedTopic } = await sb
     .from('topics')
@@ -557,7 +578,7 @@ export async function supabaseGetDashboardMetrics(): Promise<DashboardMetrics> {
     const dayLabel =
       i === 1
         ? 'Tomorrow'
-        : `${dayNames[targetDate.getDay()]} (${targetDate.getMonth() + 1}/${targetDate.getDate()})`;
+        : `${dayNames[targetDate.getUTCDay()]} (${targetDate.getUTCMonth() + 1}/${targetDate.getUTCDate()})`;
 
     const matchingTopics = allTopics
       .filter((t) => {

@@ -323,6 +323,7 @@ export default function Home() {
         onUpdateConfidence={handleUpdateConfidence}
         onSaveNotes={handleSaveNotes}
         onDeleteTopic={handleDeleteTopic}
+        onQuickReview={handleQuickReview}
       />
 
       <NewTopicModal

@@ -162,6 +162,10 @@ function initSchema(db: Database.Database) {
 
     CREATE INDEX IF NOT EXISTS idx_job_applications_status ON job_applications(status);
     CREATE INDEX IF NOT EXISTS idx_job_applications_date ON job_applications(applied_date);
+
+    UPDATE topics 
+    SET next_review_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+1 day')
+    WHERE (status = 'completed' OR status = 'mastered') AND (next_review_at IS NULL OR next_review_at = '');
   `);
 }
 
@@ -376,6 +380,17 @@ export async function updateTopic(id: string, updates: Partial<Topic>): Promise<
     if (updates.status === 'pending') completedAt = null;
   }
 
+  // Auto-schedule spaced review when marked completed or mastered if next_review_at is not set
+  if (
+    (updates.status === 'completed' || updates.status === 'mastered') &&
+    !current.next_review_at &&
+    updates.next_review_at === undefined
+  ) {
+    updates.next_review_at = calculateNextReview(Date.now(), current.box || 1);
+  } else if (updates.status === 'pending' && updates.next_review_at === undefined) {
+    updates.next_review_at = null;
+  }
+
   const fields: string[] = ['updated_at = @updated_at'];
   const params: Record<string, unknown> = { id, updated_at: now };
 
@@ -473,9 +488,17 @@ export async function recordTopicReview(
 
     // 2. Update topic status and review metadata
     let newStatus = topic.status;
-    if (newStatus === 'pending') newStatus = 'in_progress';
-    if (nextBox >= 4 && confidence >= 4) newStatus = 'mastered';
-    else if (newStatus !== 'mastered') newStatus = 'completed';
+    if (outcome === 'forgot') {
+      newStatus = 'in_progress';
+    } else if (nextBox >= 4 && confidence >= 4) {
+      newStatus = 'mastered';
+    } else if (newStatus === 'mastered' && nextBox < 4) {
+      newStatus = 'completed';
+    } else if (newStatus === 'pending') {
+      newStatus = 'in_progress';
+    } else {
+      newStatus = 'completed';
+    }
 
     db.prepare(`
       UPDATE topics
@@ -717,7 +740,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   for (let i = 1; i <= 7; i++) {
     const targetDate = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
     const dateStr = targetDate.toISOString().split('T')[0];
-    const dayLabel = i === 1 ? 'Tomorrow' : `${dayNames[targetDate.getDay()]} (${targetDate.getMonth() + 1}/${targetDate.getDate()})`;
+    const dayLabel = i === 1 ? 'Tomorrow' : `${dayNames[targetDate.getUTCDay()]} (${targetDate.getUTCMonth() + 1}/${targetDate.getUTCDate()})`;
 
     const matchingTopics = allTopics.filter(t => {
       if (!t.next_review_at) return false;

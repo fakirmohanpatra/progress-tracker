@@ -15,7 +15,7 @@ import {
   Save,
   Trash2,
 } from 'lucide-react';
-import { Topic, TopicStatus, Difficulty, PillarType } from '@/types';
+import { Topic, TopicStatus, Difficulty, PillarType, ReviewOutcome } from '@/types';
 import { triggerConfetti, formatDate, formatTimeAgo } from '@/lib/utils';
 
 interface TopicModalProps {
@@ -25,6 +25,7 @@ interface TopicModalProps {
   onUpdateConfidence: (id: string, confidence: number) => Promise<void>;
   onSaveNotes: (id: string, notes: string, intuition: string, pitfalls: string) => Promise<void>;
   onDeleteTopic?: (id: string) => Promise<void>;
+  onQuickReview?: (topicId: string, outcome: ReviewOutcome, confidence: number) => Promise<void>;
 }
 
 export function TopicModal({
@@ -34,6 +35,7 @@ export function TopicModal({
   onUpdateConfidence,
   onSaveNotes,
   onDeleteTopic,
+  onQuickReview,
 }: TopicModalProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'code'>('overview');
   const [copiedCode, setCopiedCode] = useState(false);
@@ -164,12 +166,59 @@ export function TopicModal({
           <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-400">
             <span>Box {topic.box} / 5</span>
             {topic.next_review_at && (
-              <span className="text-slate-500">
-                • Next review: {formatDate(topic.next_review_at)}
+              <span className={new Date(topic.next_review_at).getTime() <= Date.now() ? 'text-rose-400 font-semibold' : 'text-slate-500'}>
+                • {new Date(topic.next_review_at).getTime() <= Date.now() ? 'Review Due Today' : `Next review: ${formatDate(topic.next_review_at)}`}
               </span>
             )}
           </div>
         </div>
+
+        {/* Quick Review Recall Strip */}
+        {onQuickReview && (topic.status !== 'pending' || topic.times_reviewed > 0) && (
+          <div className="px-6 py-2 border-b border-slate-800/60 bg-slate-900/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-slate-400">
+              <RotateCw className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="font-semibold text-slate-200">Spaced Review:</span>
+              <span className="text-[11px] text-slate-400">
+                {topic.next_review_at && new Date(topic.next_review_at).getTime() <= Date.now()
+                  ? '🔥 Due for revision today'
+                  : topic.next_review_at
+                  ? `Scheduled for ${formatDate(topic.next_review_at)} (Box ${topic.box})`
+                  : 'Start initial revision'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={async () => {
+                  await onQuickReview(topic.id, 'forgot', 1);
+                }}
+                className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all active:scale-95"
+                title="Reset to Box 1 (1-Day review)"
+              >
+                Forgot (Box 1)
+              </button>
+              <button
+                onClick={async () => {
+                  await onQuickReview(topic.id, 'struggled', 3);
+                }}
+                className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-all active:scale-95"
+                title="Demote by 1 Box"
+              >
+                Struggled
+              </button>
+              <button
+                onClick={async () => {
+                  await onQuickReview(topic.id, 'remembered', 5);
+                  triggerConfetti();
+                }}
+                className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-all active:scale-95"
+                title="Advance to next Box"
+              >
+                Recall ✓
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Navigation Tabs */}
         <div className="px-6 pt-3 border-b border-slate-800/80 flex items-center gap-4 text-xs font-medium">
