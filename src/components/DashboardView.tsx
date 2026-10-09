@@ -17,6 +17,8 @@ import {
   Target,
   ExternalLink,
   Award,
+  Terminal,
+  Briefcase,
 } from 'lucide-react';
 import { DashboardMetrics, Topic, ViewTab, ReviewOutcome } from '@/types';
 import { ProgressRing } from './ProgressRing';
@@ -55,6 +57,8 @@ export function DashboardView({
     upcomingRevisions,
     recentCompleted,
     heatmapData,
+    sqlStats,
+    applicationStats,
   } = metrics;
 
   return (
@@ -113,6 +117,15 @@ export function DashboardView({
               <Code2 className="w-3.5 h-3.5 text-emerald-400" />
               <span>LeetCode Practice</span>
             </button>
+            {applicationStats && applicationStats.interviewsScheduled > 0 && (
+              <button
+                onClick={() => onSelectTab('applications')}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/40 transition-all flex items-center gap-2 active:scale-95"
+              >
+                <Briefcase className="w-3.5 h-3.5 text-violet-400" />
+                <span>Interviews ({applicationStats.interviewsScheduled})</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -233,8 +246,8 @@ export function DashboardView({
         </div>
       </div>
 
-      {/* 3. Three Pillars Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* 3. Core Technical Pillars & Sandboxes Section */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Pillar 1: DSA */}
         <div
           onClick={() => onSelectTab('dsa')}
@@ -357,6 +370,48 @@ export function DashboardView({
             </span>
             <span className="text-amber-400 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
               Open pillar <ChevronRight className="w-3 h-3" />
+            </span>
+          </div>
+        </div>
+
+        {/* Pillar 4: SQL Sandbox */}
+        <div
+          onClick={() => onSelectTab('sql_practice')}
+          className="group relative p-5 rounded-2xl border border-slate-800/90 hover:border-cyan-500/40 bg-gradient-to-b from-[#081318] to-[#050b0e] transition-all cursor-pointer shadow-lg hover:shadow-cyan-950/20"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                <Terminal className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors">
+                  SQL Sandbox
+                </h3>
+                <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
+                  Interactive Drills
+                </span>
+              </div>
+            </div>
+            <ProgressRing
+              percentage={sqlStats?.percentage ?? 0}
+              size={56}
+              strokeWidth={5}
+              color="#06b6d4"
+              glowColor="rgba(6, 182, 212, 0.4)"
+            />
+          </div>
+
+          <p className="text-xs text-slate-400 line-clamp-2 mb-3">
+            Joins, Window functions, DENSE_RANK, Aggregations & Subqueries with real-time SQLite execution.
+          </p>
+
+          <div className="flex items-center justify-between text-xs pt-3 border-t border-slate-800/80 font-mono">
+            <span className="text-slate-400">
+              <strong className="text-cyan-400 font-semibold">{sqlStats?.completed ?? 0}</strong> / {sqlStats?.total ?? 8} solved
+            </span>
+            <span className="text-cyan-400 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+              Open sandbox <ChevronRight className="w-3 h-3" />
             </span>
           </div>
         </div>

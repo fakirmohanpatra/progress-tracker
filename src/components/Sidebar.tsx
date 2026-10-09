@@ -11,9 +11,8 @@ import {
   FileText,
   BarChart3,
   Flame,
-  CheckCircle2,
-  ExternalLink,
   Terminal,
+  Briefcase,
 } from 'lucide-react';
 import { ViewTab, DashboardMetrics } from '@/types';
 
@@ -65,36 +64,48 @@ export function Sidebar({ currentTab, onSelectTab, metrics }: SidebarProps) {
       pillarColor: 'text-amber-400',
     },
     {
+      id: 'sql_practice',
+      label: 'SQL Sandbox',
+      icon: Terminal,
+      shortcut: '5',
+      badge: metrics?.sqlStats ? `${metrics.sqlStats.completed}/${metrics.sqlStats.total}` : undefined,
+      pillarColor: 'text-cyan-400',
+    },
+    {
       id: 'calendar',
       label: 'Calendar & Roadmap',
       icon: Calendar,
-      shortcut: '5',
+      shortcut: '6',
     },
     {
       id: 'review_queue',
       label: 'Review Queue',
       icon: RotateCw,
-      shortcut: '6',
+      shortcut: '7',
       badge: metrics && metrics.dueForReviewCount > 0 ? `${metrics.dueForReviewCount} due` : undefined,
     },
     {
       id: 'notes',
       label: 'Notes & Cheatsheets',
       icon: FileText,
-      shortcut: '7',
+      shortcut: '8',
     },
     {
       id: 'analytics',
       label: 'Analytics',
       icon: BarChart3,
-      shortcut: '8',
+      shortcut: '9',
     },
     {
-      id: 'sql_practice',
-      label: 'SQL Command Practice',
-      icon: Terminal,
-      shortcut: '9',
-      pillarColor: 'text-cyan-400',
+      id: 'applications',
+      label: 'Application List',
+      icon: Briefcase,
+      shortcut: '0',
+      badge:
+        metrics?.applicationStats && metrics.applicationStats.active > 0
+          ? `${metrics.applicationStats.active} active`
+          : undefined,
+      pillarColor: 'text-violet-400',
     },
   ];
 
@@ -232,6 +243,24 @@ export function Sidebar({ currentTab, onSelectTab, metrics }: SidebarProps) {
                 />
               </div>
             </div>
+
+            {/* SQL Sandbox */}
+            {metrics.sqlStats && (
+              <div>
+                <div className="flex justify-between text-[11px] mb-1">
+                  <span className="text-cyan-400 font-medium">SQL Sandbox</span>
+                  <span className="text-slate-400 font-mono">
+                    {metrics.sqlStats.percentage}%
+                  </span>
+                </div>
+                <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-cyan-400 rounded-full transition-all duration-500"
+                    style={{ width: `${metrics.sqlStats.percentage}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

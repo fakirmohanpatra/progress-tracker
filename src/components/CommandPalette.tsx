@@ -14,6 +14,8 @@ import {
   Clock,
   Sparkles,
   ArrowRight,
+  Terminal,
+  Briefcase,
 } from 'lucide-react';
 import { Topic, ViewTab } from '@/types';
 
@@ -79,10 +81,12 @@ export function CommandPalette({
     { label: 'Go to DSA (LeetCode)', tab: 'dsa' as ViewTab, icon: Code2 },
     { label: 'Go to System Design', tab: 'system_design' as ViewTab, icon: Network },
     { label: 'Go to Backend Engineering', tab: 'backend' as ViewTab, icon: Server },
-    { label: 'Go to Review Queue', tab: 'review_queue' as ViewTab, icon: RotateCw },
+    { label: 'Go to SQL Sandbox', tab: 'sql_practice' as ViewTab, icon: Terminal },
     { label: 'Go to 90-Day Calendar', tab: 'calendar' as ViewTab, icon: Calendar },
+    { label: 'Go to Review Queue', tab: 'review_queue' as ViewTab, icon: RotateCw },
     { label: 'Go to Notes & Cheatsheets', tab: 'notes' as ViewTab, icon: FileText },
     { label: 'Go to Analytics', tab: 'analytics' as ViewTab, icon: BarChart3 },
+    { label: 'Go to Application List', tab: 'applications' as ViewTab, icon: Briefcase },
   ].filter((item) => !query || item.label.toLowerCase().includes(query.toLowerCase()));
 
   return (

@@ -12,6 +12,9 @@ import {
   DashboardMetrics,
   PillarStats,
   ReviewOutcome,
+  JobApplication,
+  ApplicationStatus,
+  SqlStats,
 } from '@/types';
 import {
   isSupabaseConfigured,
@@ -25,6 +28,14 @@ import {
   supabaseLogStudyTime,
   supabaseGetDashboardMetrics,
   supabaseResetDatabase,
+  supabaseGetCompletedSqlChallenges,
+  supabaseToggleSqlChallenge,
+  supabaseGetSqlStats,
+  supabaseGetApplications,
+  supabaseGetApplicationById,
+  supabaseCreateApplication,
+  supabaseUpdateApplication,
+  supabaseDeleteApplication,
 } from './supabase';
 
 // Singleton database instance across hot reloads
@@ -127,6 +138,30 @@ function initSchema(db: Database.Database) {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS sql_progress (
+      challenge_id TEXT PRIMARY KEY,
+      completed_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS job_applications (
+      id TEXT PRIMARY KEY,
+      company TEXT NOT NULL,
+      role TEXT NOT NULL,
+      applied_date TEXT NOT NULL,
+      status TEXT NOT NULL,
+      point_of_contact TEXT,
+      interview_date TEXT,
+      comment TEXT,
+      location TEXT,
+      job_url TEXT,
+      salary_range TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_job_applications_status ON job_applications(status);
+    CREATE INDEX IF NOT EXISTS idx_job_applications_date ON job_applications(applied_date);
   `);
 }
 
@@ -714,6 +749,14 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     heatmapData.push({ date: ds, count, minutes });
   }
 
+  const sqlStats = await getSqlStats();
+  const applications = await getApplications();
+  const activeApps = applications.filter((a) => !['rejected', 'withdrawn', 'offer'].includes(a.status)).length;
+  const upcomingInterviews = applications.filter(
+    (a) => a.interview_date && new Date(a.interview_date).getTime() >= now.getTime() - 24 * 60 * 60 * 1000
+  ).length;
+  const offers = applications.filter((a) => a.status === 'offer').length;
+
   return {
     totalTopics,
     completedTopics: completedCount,
@@ -736,6 +779,13 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     upcomingRevisions,
     recentCompleted,
     heatmapData,
+    sqlStats,
+    applicationStats: {
+      total: applications.length,
+      active: activeApps,
+      interviewsScheduled: upcomingInterviews,
+      offers,
+    },
   };
 }
 
@@ -750,6 +800,188 @@ export async function resetDatabase(): Promise<void> {
     DELETE FROM daily_logs;
     DELETE FROM app_settings;
     DELETE FROM topics;
+    DELETE FROM sql_progress;
+    DELETE FROM job_applications;
   `);
   seedIfEmpty(db);
+}
+
+// ==========================================
+// SQL CHALLENGE PROGRESS API
+// ==========================================
+
+export const TOTAL_SQL_CHALLENGES = 8;
+
+export async function getCompletedSqlChallenges(): Promise<string[]> {
+  if (isSupabaseConfigured()) {
+    return await supabaseGetCompletedSqlChallenges();
+  }
+  const db = getDatabase();
+  const rows = db.prepare('SELECT challenge_id FROM sql_progress').all() as { challenge_id: string }[];
+  return rows.map((r) => r.challenge_id);
+}
+
+export async function toggleSqlChallenge(
+  challengeId: string,
+  completed?: boolean
+): Promise<{ completed: boolean; completedIds: string[] }> {
+  if (isSupabaseConfigured()) {
+    return await supabaseToggleSqlChallenge(challengeId, completed);
+  }
+  const db = getDatabase();
+  const existing = db.prepare('SELECT challenge_id FROM sql_progress WHERE challenge_id = ?').get(challengeId);
+  const shouldBeCompleted = completed !== undefined ? completed : !existing;
+  const nowIso = new Date().toISOString();
+
+  if (shouldBeCompleted) {
+    db.prepare('INSERT OR REPLACE INTO sql_progress (challenge_id, completed_at) VALUES (?, ?)').run(
+      challengeId,
+      nowIso
+    );
+  } else {
+    db.prepare('DELETE FROM sql_progress WHERE challenge_id = ?').run(challengeId);
+  }
+
+  const completedIds = await getCompletedSqlChallenges();
+  return { completed: shouldBeCompleted, completedIds };
+}
+
+export async function getSqlStats(): Promise<SqlStats> {
+  if (isSupabaseConfigured()) {
+    return await supabaseGetSqlStats();
+  }
+  const completedIds = await getCompletedSqlChallenges();
+  const completed = completedIds.length;
+  const total = TOTAL_SQL_CHALLENGES;
+  const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+  return { total, completed, percentage };
+}
+
+// ==========================================
+// JOB APPLICATIONS API
+// ==========================================
+
+export async function getApplications(filters?: {
+  status?: ApplicationStatus;
+  search?: string;
+}): Promise<JobApplication[]> {
+  if (isSupabaseConfigured()) {
+    return await supabaseGetApplications(filters);
+  }
+  const db = getDatabase();
+  const conditions: string[] = [];
+  const params: Record<string, unknown> = {};
+
+  if (filters?.status) {
+    conditions.push('status = @status');
+    params.status = filters.status;
+  }
+  if (filters?.search) {
+    conditions.push(
+      '(company LIKE @search OR role LIKE @search OR point_of_contact LIKE @search OR comment LIKE @search)'
+    );
+    params.search = `%${filters.search}%`;
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `SELECT * FROM job_applications ${whereClause} ORDER BY applied_date DESC, created_at DESC`;
+  return db.prepare(query).all(params) as JobApplication[];
+}
+
+export async function getApplicationById(id: string): Promise<JobApplication | undefined> {
+  if (isSupabaseConfigured()) {
+    return await supabaseGetApplicationById(id);
+  }
+  const db = getDatabase();
+  return db.prepare('SELECT * FROM job_applications WHERE id = ?').get(id) as JobApplication | undefined;
+}
+
+export async function createApplication(
+  data: Partial<JobApplication> & { company: string }
+): Promise<JobApplication> {
+  if (isSupabaseConfigured()) {
+    return await supabaseCreateApplication(data);
+  }
+  const db = getDatabase();
+  const nowIso = new Date().toISOString();
+  const today = nowIso.split('T')[0];
+  const id = data.id || `app-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+  const app: JobApplication = {
+    id,
+    company: data.company.trim(),
+    role: (data.role || 'Software Engineer').trim(),
+    applied_date: data.applied_date || today,
+    status: data.status || 'applied',
+    point_of_contact: data.point_of_contact ? data.point_of_contact.trim() : null,
+    interview_date: data.interview_date || null,
+    comment: data.comment ? data.comment.trim() : null,
+    location: data.location ? data.location.trim() : null,
+    job_url: data.job_url ? data.job_url.trim() : null,
+    salary_range: data.salary_range ? data.salary_range.trim() : null,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  db.prepare(`
+    INSERT INTO job_applications (
+      id, company, role, applied_date, status, point_of_contact,
+      interview_date, comment, location, job_url, salary_range, created_at, updated_at
+    ) VALUES (
+      @id, @company, @role, @applied_date, @status, @point_of_contact,
+      @interview_date, @comment, @location, @job_url, @salary_range, @created_at, @updated_at
+    )
+  `).run(app);
+
+  return app;
+}
+
+export async function updateApplication(
+  id: string,
+  updates: Partial<JobApplication>
+): Promise<JobApplication | undefined> {
+  if (isSupabaseConfigured()) {
+    return await supabaseUpdateApplication(id, updates);
+  }
+  const db = getDatabase();
+  const current = await getApplicationById(id);
+  if (!current) return undefined;
+
+  const nowIso = new Date().toISOString();
+  const updateableKeys: (keyof JobApplication)[] = [
+    'company',
+    'role',
+    'applied_date',
+    'status',
+    'point_of_contact',
+    'interview_date',
+    'comment',
+    'location',
+    'job_url',
+    'salary_range',
+  ];
+
+  const fields: string[] = ['updated_at = @updated_at'];
+  const params: Record<string, unknown> = { id, updated_at: nowIso };
+
+  for (const key of updateableKeys) {
+    if (updates[key] !== undefined) {
+      fields.push(`${key} = @${key}`);
+      params[key] = updates[key];
+    }
+  }
+
+  const sql = `UPDATE job_applications SET ${fields.join(', ')} WHERE id = @id`;
+  db.prepare(sql).run(params);
+
+  return await getApplicationById(id);
+}
+
+export async function deleteApplication(id: string): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    return await supabaseDeleteApplication(id);
+  }
+  const db = getDatabase();
+  const res = db.prepare('DELETE FROM job_applications WHERE id = ?').run(id);
+  return res.changes > 0;
 }

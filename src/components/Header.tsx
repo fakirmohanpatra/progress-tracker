@@ -47,8 +47,12 @@ const TAB_TITLES: Record<ViewTab, { title: string; subtitle: string }> = {
     subtitle: 'Pillar mastery curves, study velocity, streak tracking, and projections',
   },
   sql_practice: {
-    title: 'SQL Command Practice Console',
-    subtitle: 'Interactive SQL sandbox & SDE2 interview challenges with real-time execution',
+    title: 'SQL Sandbox Workbench',
+    subtitle: 'Interactive SQLite sandbox & SDE2 interview challenges with real-time execution',
+  },
+  applications: {
+    title: 'Job Application Pipeline',
+    subtitle: 'Track applied companies, recruiter contacts, technical interview dates & offers',
   },
 };
 

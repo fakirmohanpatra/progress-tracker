@@ -10,6 +10,7 @@ import { ReviewQueueView } from '@/components/ReviewQueueView';
 import { NotesView } from '@/components/NotesView';
 import { AnalyticsView } from '@/components/AnalyticsView';
 import { SqlPracticeView } from '@/components/SqlPracticeView';
+import { ApplicationListView } from '@/components/ApplicationListView';
 import { TopicModal } from '@/components/TopicModal';
 import { NewTopicModal } from '@/components/NewTopicModal';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -87,11 +88,12 @@ export default function Home() {
       else if (e.key === '2') setCurrentTab('dsa');
       else if (e.key === '3') setCurrentTab('system_design');
       else if (e.key === '4') setCurrentTab('backend');
-      else if (e.key === '5') setCurrentTab('calendar');
-      else if (e.key === '6') setCurrentTab('review_queue');
-      else if (e.key === '7') setCurrentTab('notes');
-      else if (e.key === '8') setCurrentTab('analytics');
-      else if (e.key === '9') setCurrentTab('sql_practice');
+      else if (e.key === '5') setCurrentTab('sql_practice');
+      else if (e.key === '6') setCurrentTab('calendar');
+      else if (e.key === '7') setCurrentTab('review_queue');
+      else if (e.key === '8') setCurrentTab('notes');
+      else if (e.key === '9') setCurrentTab('analytics');
+      else if (e.key === '0' || e.key.toLowerCase() === 'a') setCurrentTab('applications');
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -302,7 +304,11 @@ export default function Home() {
               )}
 
               {currentTab === 'sql_practice' && (
-                <SqlPracticeView />
+                <SqlPracticeView onProgressUpdate={loadData} />
+              )}
+
+              {currentTab === 'applications' && (
+                <ApplicationListView onRefreshMetrics={loadData} />
               )}
             </>
           )}

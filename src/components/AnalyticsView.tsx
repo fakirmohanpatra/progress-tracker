@@ -203,6 +203,24 @@ export function AnalyticsView({ metrics, topics }: AnalyticsViewProps) {
                 />
               </div>
             </div>
+
+            {/* SQL Sandbox */}
+            {metrics.sqlStats && (
+              <div>
+                <div className="flex justify-between text-xs mb-1.5 font-medium">
+                  <span className="text-cyan-400">SQL Sandbox (Query Practice)</span>
+                  <span className="font-mono text-slate-300">
+                    {metrics.sqlStats.completed} / {metrics.sqlStats.total} ({metrics.sqlStats.percentage}%)
+                  </span>
+                </div>
+                <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-cyan-400 rounded-full transition-all duration-700"
+                    style={{ width: `${metrics.sqlStats.percentage}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

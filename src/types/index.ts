@@ -153,6 +153,19 @@ export interface DashboardMetrics {
   }[];
   recentCompleted: Topic[];
   heatmapData: { date: string; count: number; minutes: number }[];
+  sqlStats: SqlStats;
+  applicationStats?: {
+    total: number;
+    active: number;
+    interviewsScheduled: number;
+    offers: number;
+  };
+}
+
+export interface SqlStats {
+  total: number;
+  completed: number;
+  percentage: number;
 }
 
 export type ViewTab =
@@ -160,11 +173,12 @@ export type ViewTab =
   | 'dsa'
   | 'system_design'
   | 'backend'
+  | 'sql_practice'
   | 'calendar'
   | 'review_queue'
-  | 'sql_practice'
   | 'notes'
-  | 'analytics';
+  | 'analytics'
+  | 'applications';
 
 export interface SqlChallenge {
   id: string;
@@ -175,4 +189,30 @@ export interface SqlChallenge {
   initialQuery: string;
   solutionQuery: string;
   expectedOutputHint: string;
+}
+
+export type ApplicationStatus =
+  | 'applied'
+  | 'screening'
+  | 'technical'
+  | 'system_design'
+  | 'onsite'
+  | 'offer'
+  | 'rejected'
+  | 'withdrawn';
+
+export interface JobApplication {
+  id: string;
+  company: string;
+  role: string;
+  applied_date: string; // YYYY-MM-DD
+  status: ApplicationStatus;
+  point_of_contact?: string | null;
+  interview_date?: string | null; // ISO string or YYYY-MM-DDTHH:mm
+  comment?: string | null;
+  location?: string | null;
+  job_url?: string | null;
+  salary_range?: string | null;
+  created_at: string;
+  updated_at: string;
 }

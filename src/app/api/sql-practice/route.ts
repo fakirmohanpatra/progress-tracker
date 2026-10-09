@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import Database from 'better-sqlite3';
 import { SqlChallenge } from '@/types';
+import { getCompletedSqlChallenges, toggleSqlChallenge, getSqlStats } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -283,8 +284,13 @@ function createPracticeSandbox(): Database.Database {
 }
 
 export async function GET() {
+  const completedChallengeIds = await getCompletedSqlChallenges();
+  const stats = await getSqlStats();
+
   return NextResponse.json({
     challenges: SQL_CHALLENGES,
+    completedChallengeIds,
+    stats,
     schema: {
       Departments: ['Id INTEGER', 'DepartmentName TEXT', 'Location TEXT'],
       Employees: ['Id INTEGER', 'Name TEXT', 'DepartmentId INTEGER', 'ManagerId INTEGER', 'Salary INTEGER', 'HireDate TEXT'],
@@ -298,6 +304,23 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+
+    // Check if toggling completion
+    if (body.action === 'toggle_completed' || body.action === 'mark_solved') {
+      const challengeId = body.challengeId;
+      if (!challengeId) {
+        return NextResponse.json({ error: 'challengeId is required' }, { status: 400 });
+      }
+      const result = await toggleSqlChallenge(challengeId, body.completed);
+      const stats = await getSqlStats();
+      return NextResponse.json({
+        success: true,
+        completed: result.completed,
+        completedChallengeIds: result.completedIds,
+        stats,
+      });
+    }
+
     const query = (body.query || body.sql)?.trim();
 
     if (!query) {

@@ -72,11 +72,42 @@ CREATE TABLE IF NOT EXISTS daily_logs (
 
 CREATE INDEX IF NOT EXISTS idx_daily_logs_date ON daily_logs(date);
 
+-- 5. SQL Sandbox Progress Table
+CREATE TABLE IF NOT EXISTS sql_progress (
+  challenge_id TEXT PRIMARY KEY,
+  completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 6. Job Applications Pipeline Table
+CREATE TABLE IF NOT EXISTS job_applications (
+  id TEXT PRIMARY KEY,
+  company TEXT NOT NULL,
+  role TEXT NOT NULL,
+  applied_date TEXT NOT NULL,
+  status TEXT NOT NULL,
+  point_of_contact TEXT,
+  interview_date TEXT,
+  comment TEXT,
+  location TEXT,
+  job_url TEXT,
+  salary_range TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_applications_status ON job_applications(status);
+CREATE INDEX IF NOT EXISTS idx_job_applications_date ON job_applications(applied_date);
+
 -- Enable Row Level Security (RLS) with full access policies
 ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE topics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sql_progress ENABLE ROW LEVEL SECURITY;
+ALTER TABLE job_applications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public all on sql_progress" ON sql_progress FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public all on job_applications" ON job_applications FOR ALL USING (true) WITH CHECK (true);
 
 DO $$ 
 BEGIN

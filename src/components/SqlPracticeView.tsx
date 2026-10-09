@@ -18,7 +18,11 @@ import {
 import { SqlChallenge } from '@/types';
 import { triggerConfetti } from '@/lib/utils';
 
-export function SqlPracticeView() {
+interface SqlPracticeViewProps {
+  onProgressUpdate?: () => void;
+}
+
+export function SqlPracticeView({ onProgressUpdate }: SqlPracticeViewProps = {}) {
   const [challenges, setChallenges] = useState<SqlChallenge[]>([]);
   const [activeChallengeId, setActiveChallengeId] = useState<string>('');
   const [sqlQuery, setSqlQuery] = useState<string>('');
@@ -30,8 +34,9 @@ export function SqlPracticeView() {
   const [showSchema, setShowSchema] = useState(false);
   const [completedChallenges, setCompletedChallenges] = useState<Set<string>>(new Set());
   const [schemaData, setSchemaData] = useState<Record<string, string[]> | null>(null);
+  const [filterMode, setFilterMode] = useState<'all' | 'unsolved' | 'solved'>('all');
 
-  // Load challenges from API
+  // Load challenges and saved progress from API
   useEffect(() => {
     fetch('/api/sql-practice')
       .then((res) => res.json())
@@ -40,6 +45,9 @@ export function SqlPracticeView() {
           setChallenges(data.challenges);
           setActiveChallengeId(data.challenges[0].id);
           setSqlQuery(data.challenges[0].initialQuery);
+        }
+        if (data.completedChallengeIds) {
+          setCompletedChallenges(new Set(data.completedChallengeIds));
         }
         if (data.schema) {
           setSchemaData(data.schema);
@@ -86,13 +94,42 @@ export function SqlPracticeView() {
     }
   };
 
-  const handleMarkSolved = () => {
-    triggerConfetti();
+  const handleToggleSolved = async (challengeId?: string) => {
+    const id = challengeId || activeChallenge?.id;
+    if (!id) return;
+
+    const isCurrentlySolved = completedChallenges.has(id);
+    const nextSolved = !isCurrentlySolved;
+
+    if (nextSolved) {
+      triggerConfetti();
+    }
+
     setCompletedChallenges((prev) => {
       const next = new Set(prev);
-      next.add(activeChallenge.id);
+      if (nextSolved) next.add(id);
+      else next.delete(id);
       return next;
     });
+
+    try {
+      const res = await fetch('/api/sql-practice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'toggle_completed',
+          challengeId: id,
+          completed: nextSolved,
+        }),
+      });
+      const data = await res.json();
+      if (data.completedChallengeIds) {
+        setCompletedChallenges(new Set(data.completedChallengeIds));
+      }
+      onProgressUpdate?.();
+    } catch (err) {
+      console.error('Failed to save SQL progress:', err);
+    }
   };
 
   // Run with Cmd+Enter
@@ -103,20 +140,30 @@ export function SqlPracticeView() {
     }
   };
 
+  const solvedCount = completedChallenges.size;
+  const totalCount = challenges.length;
+  const completionPercentage = totalCount > 0 ? Math.round((solvedCount / totalCount) * 100) : 0;
+
+  const filteredChallenges = challenges.filter((c) => {
+    if (filterMode === 'solved') return completedChallenges.has(c.id);
+    if (filterMode === 'unsolved') return !completedChallenges.has(c.id);
+    return true;
+  });
+
   return (
     <div className="p-6 max-w-7xl mx-auto h-[calc(100vh-80px)] flex flex-col space-y-4">
       {/* Top Banner */}
       <div className="p-4 rounded-2xl border border-slate-800/80 bg-[#0c0e15] flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-shrink-0 shadow-lg">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+          <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
             <TerminalSquare className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base font-bold text-white tracking-tight">
-                SQL Command Practice Workbench
+                SQL Sandbox & Command Workbench
               </h2>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                 Interactive SQLite Sandbox
               </span>
             </div>
@@ -126,7 +173,23 @@ export function SqlPracticeView() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center gap-3 text-xs">
+          {/* Progress Tracker Pill */}
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl border border-cyan-500/20 bg-cyan-950/20">
+            <div className="text-right">
+              <div className="text-[11px] font-mono text-cyan-300 font-bold">
+                {solvedCount} / {totalCount} Solved
+              </div>
+              <div className="text-[9px] font-mono text-slate-400">{completionPercentage}% Completed</div>
+            </div>
+            <div className="w-16 h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-500"
+                style={{ width: `${completionPercentage}%` }}
+              />
+            </div>
+          </div>
+
           <button
             onClick={() => setShowSchema(!showSchema)}
             className="px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 flex items-center gap-1.5 transition-colors font-medium"
@@ -134,9 +197,6 @@ export function SqlPracticeView() {
             <Table className="w-3.5 h-3.5 text-indigo-400" />
             <span>{showSchema ? 'Hide Schema' : 'View Sandbox Schema'}</span>
           </button>
-          <span className="text-xs font-mono text-slate-400 px-2 py-1 bg-slate-900 rounded-lg border border-slate-800">
-            Solved: <strong className="text-emerald-400">{completedChallenges.size}</strong>/{challenges.length}
-          </span>
         </div>
       </div>
 
@@ -170,47 +230,87 @@ export function SqlPracticeView() {
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
               SDE2 Interview Problems
             </span>
-            <span className="text-[10px] font-mono text-slate-500">
-              {challenges.length} tasks
+            <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 px-1.5 py-0.5 rounded border border-cyan-800/30">
+              {solvedCount}/{challenges.length}
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto mt-3 space-y-1.5 pr-1">
-            {challenges.map((c) => {
-              const isSelected = activeChallenge?.id === c.id;
-              const isSolved = completedChallenges.has(c.id);
+          {/* Filter Pills */}
+          <div className="flex items-center gap-1 my-2.5 p-1 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px]">
+            <button
+              onClick={() => setFilterMode('all')}
+              className={`flex-1 py-1 rounded-lg font-medium transition-all ${
+                filterMode === 'all'
+                  ? 'bg-slate-800 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              All ({challenges.length})
+            </button>
+            <button
+              onClick={() => setFilterMode('unsolved')}
+              className={`flex-1 py-1 rounded-lg font-medium transition-all ${
+                filterMode === 'unsolved'
+                  ? 'bg-slate-800 text-amber-300 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Todo ({challenges.length - solvedCount})
+            </button>
+            <button
+              onClick={() => setFilterMode('solved')}
+              className={`flex-1 py-1 rounded-lg font-medium transition-all ${
+                filterMode === 'solved'
+                  ? 'bg-slate-800 text-emerald-400 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Done ({solvedCount})
+            </button>
+          </div>
 
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => handleSelectChallenge(c)}
-                  className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all ${
-                    isSelected
-                      ? 'border-indigo-500/60 bg-indigo-950/20 text-white shadow-sm'
-                      : 'border-transparent hover:border-slate-800 hover:bg-slate-900/60 text-slate-400'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold truncate">{c.title}</span>
-                    {isSolved && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />}
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
-                    <span>{c.category}</span>
-                    <span
-                      className={
-                        c.difficulty === 'Easy'
-                          ? 'text-emerald-400'
-                          : c.difficulty === 'Medium'
-                          ? 'text-amber-400'
-                          : 'text-rose-400'
-                      }
-                    >
-                      {c.difficulty}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
+          <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+            {filteredChallenges.length === 0 ? (
+              <div className="p-4 text-center text-xs text-slate-500 font-mono">
+                No challenges match filter
+              </div>
+            ) : (
+              filteredChallenges.map((c) => {
+                const isSelected = activeChallenge?.id === c.id;
+                const isSolved = completedChallenges.has(c.id);
+
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => handleSelectChallenge(c)}
+                    className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all ${
+                      isSelected
+                        ? 'border-cyan-500/60 bg-cyan-950/20 text-white shadow-sm'
+                        : 'border-transparent hover:border-slate-800 hover:bg-slate-900/60 text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold truncate">{c.title}</span>
+                      {isSolved && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />}
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+                      <span>{c.category}</span>
+                      <span
+                        className={
+                          c.difficulty === 'Easy'
+                            ? 'text-emerald-400'
+                            : c.difficulty === 'Medium'
+                            ? 'text-amber-400'
+                            : 'text-rose-400'
+                        }
+                      >
+                        {c.difficulty}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -262,12 +362,13 @@ export function SqlPracticeView() {
                     </button>
 
                     <button
-                      onClick={handleMarkSolved}
+                      onClick={() => handleToggleSolved()}
                       className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all ${
                         completedChallenges.has(activeChallenge.id)
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-rose-500/10 hover:text-rose-300 hover:border-rose-500/30'
                           : 'bg-slate-800 hover:bg-emerald-600 hover:text-white text-slate-300'
                       }`}
+                      title={completedChallenges.has(activeChallenge.id) ? 'Click to unmark' : 'Mark as solved'}
                     >
                       <Check className="w-3.5 h-3.5" />
                       <span>{completedChallenges.has(activeChallenge.id) ? 'Solved ✓' : 'Mark Solved'}</span>

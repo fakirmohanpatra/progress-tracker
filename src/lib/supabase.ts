@@ -9,9 +9,11 @@ import {
   DashboardMetrics,
   PillarStats,
   ReviewOutcome,
+  JobApplication,
+  ApplicationStatus,
+  SqlStats,
 } from '@/types';
 import { LEITNER_INTERVALS_DAYS } from './db';
-import { SEED_TOPICS } from './seed-data';
 
 let supabaseInstance: SupabaseClient | null = null;
 
@@ -589,6 +591,14 @@ export async function supabaseGetDashboardMetrics(): Promise<DashboardMetrics> {
     heatmapData.push({ date: ds, count, minutes });
   }
 
+  const sqlStats = await supabaseGetSqlStats();
+  const applications = await supabaseGetApplications();
+  const activeApps = applications.filter((a) => !['rejected', 'withdrawn', 'offer'].includes(a.status)).length;
+  const upcomingInterviews = applications.filter(
+    (a) => a.interview_date && new Date(a.interview_date).getTime() >= now.getTime() - 24 * 60 * 60 * 1000
+  ).length;
+  const offers = applications.filter((a) => a.status === 'offer').length;
+
   return {
     totalTopics,
     completedTopics: completedCount,
@@ -611,6 +621,13 @@ export async function supabaseGetDashboardMetrics(): Promise<DashboardMetrics> {
     upcomingRevisions,
     recentCompleted,
     heatmapData,
+    sqlStats,
+    applicationStats: {
+      total: applications.length,
+      active: activeApps,
+      interviewsScheduled: upcomingInterviews,
+      offers,
+    },
   };
 }
 
@@ -638,4 +655,231 @@ export async function supabaseResetDatabase(): Promise<void> {
     next_review_at: null,
     times_reviewed: 0,
   }).neq('id', '___');
+}
+
+// -------------------------------------------------------------
+// SQL Practice Progress
+// -------------------------------------------------------------
+
+export async function supabaseGetCompletedSqlChallenges(): Promise<string[]> {
+  const sb = getSupabase();
+  try {
+    const { data, error } = await sb.from('sql_progress').select('challenge_id');
+    if (!error && data) {
+      return data.map((r: { challenge_id: string }) => r.challenge_id);
+    }
+  } catch {
+    // fallback to app_settings
+  }
+
+  try {
+    const { data, error } = await sb.from('app_settings').select('value').eq('key', 'sql_completed_challenges').single();
+    if (!error && data?.value) {
+      return JSON.parse(data.value);
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+export async function supabaseToggleSqlChallenge(
+  challengeId: string,
+  completed?: boolean
+): Promise<{ completed: boolean; completedIds: string[] }> {
+  const sb = getSupabase();
+  const current = await supabaseGetCompletedSqlChallenges();
+  const exists = current.includes(challengeId);
+  const shouldBeCompleted = completed !== undefined ? completed : !exists;
+
+  let nextIds: string[];
+  if (shouldBeCompleted) {
+    nextIds = Array.from(new Set([...current, challengeId]));
+  } else {
+    nextIds = current.filter((id) => id !== challengeId);
+  }
+
+  try {
+    if (shouldBeCompleted) {
+      await sb.from('sql_progress').upsert({ challenge_id: challengeId, completed_at: new Date().toISOString() });
+    } else {
+      await sb.from('sql_progress').delete().eq('challenge_id', challengeId);
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    await sb.from('app_settings').upsert({
+      key: 'sql_completed_challenges',
+      value: JSON.stringify(nextIds),
+    });
+  } catch (err) {
+    console.error('Failed to save sql_completed_challenges to app_settings:', err);
+  }
+
+  return { completed: shouldBeCompleted, completedIds: nextIds };
+}
+
+export async function supabaseGetSqlStats(): Promise<SqlStats> {
+  const completedIds = await supabaseGetCompletedSqlChallenges();
+  const completed = completedIds.length;
+  const total = 8;
+  const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+  return { total, completed, percentage };
+}
+
+// -------------------------------------------------------------
+// Job Applications CRUD
+// -------------------------------------------------------------
+
+export async function supabaseGetApplications(filters?: {
+  status?: ApplicationStatus;
+  search?: string;
+}): Promise<JobApplication[]> {
+  const sb = getSupabase();
+  let applications: JobApplication[] = [];
+
+  try {
+    let query = sb.from('job_applications').select('*').order('applied_date', { ascending: false });
+    if (filters?.status) {
+      query = query.eq('status', filters.status);
+    }
+    const { data, error } = await query;
+    if (!error && data) {
+      applications = data as JobApplication[];
+    } else {
+      throw error;
+    }
+  } catch {
+    try {
+      const { data } = await sb.from('app_settings').select('value').eq('key', 'job_applications').single();
+      if (data?.value) {
+        applications = JSON.parse(data.value);
+        if (filters?.status) {
+          applications = applications.filter((a) => a.status === filters.status);
+        }
+      }
+    } catch {
+      applications = [];
+    }
+  }
+
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    applications = applications.filter(
+      (a) =>
+        a.company.toLowerCase().includes(q) ||
+        a.role.toLowerCase().includes(q) ||
+        (a.point_of_contact && a.point_of_contact.toLowerCase().includes(q)) ||
+        (a.comment && a.comment.toLowerCase().includes(q))
+    );
+  }
+
+  return applications;
+}
+
+export async function supabaseGetApplicationById(id: string): Promise<JobApplication | undefined> {
+  const apps = await supabaseGetApplications();
+  return apps.find((a) => a.id === id);
+}
+
+export async function supabaseCreateApplication(
+  data: Partial<JobApplication> & { company: string }
+): Promise<JobApplication> {
+  const sb = getSupabase();
+  const nowIso = new Date().toISOString();
+  const today = nowIso.split('T')[0];
+  const id = data.id || `app-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+  const newApp: JobApplication = {
+    id,
+    company: data.company.trim(),
+    role: (data.role || 'Software Engineer').trim(),
+    applied_date: data.applied_date || today,
+    status: data.status || 'applied',
+    point_of_contact: data.point_of_contact ? data.point_of_contact.trim() : null,
+    interview_date: data.interview_date || null,
+    comment: data.comment ? data.comment.trim() : null,
+    location: data.location ? data.location.trim() : null,
+    job_url: data.job_url ? data.job_url.trim() : null,
+    salary_range: data.salary_range ? data.salary_range.trim() : null,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  try {
+    await sb.from('job_applications').insert(newApp);
+  } catch {
+    // ignore
+  }
+
+  try {
+    const all = await supabaseGetApplications();
+    const updated = [newApp, ...all.filter((a) => a.id !== id)];
+    await sb.from('app_settings').upsert({
+      key: 'job_applications',
+      value: JSON.stringify(updated),
+    });
+  } catch (err) {
+    console.error('Failed to sync job_applications in app_settings:', err);
+  }
+
+  return newApp;
+}
+
+export async function supabaseUpdateApplication(
+  id: string,
+  updates: Partial<JobApplication>
+): Promise<JobApplication | undefined> {
+  const sb = getSupabase();
+  const current = await supabaseGetApplicationById(id);
+  if (!current) return undefined;
+
+  const nowIso = new Date().toISOString();
+  const updatedApp: JobApplication = {
+    ...current,
+    ...updates,
+    updated_at: nowIso,
+  };
+
+  try {
+    await sb.from('job_applications').update({ ...updates, updated_at: nowIso }).eq('id', id);
+  } catch {
+    // ignore
+  }
+
+  try {
+    const all = await supabaseGetApplications();
+    const updatedList = all.map((a) => (a.id === id ? updatedApp : a));
+    await sb.from('app_settings').upsert({
+      key: 'job_applications',
+      value: JSON.stringify(updatedList),
+    });
+  } catch (err) {
+    console.error('Failed to sync update in app_settings:', err);
+  }
+
+  return updatedApp;
+}
+
+export async function supabaseDeleteApplication(id: string): Promise<boolean> {
+  const sb = getSupabase();
+  try {
+    await sb.from('job_applications').delete().eq('id', id);
+  } catch {
+    // ignore
+  }
+
+  try {
+    const all = await supabaseGetApplications();
+    const updatedList = all.filter((a) => a.id !== id);
+    await sb.from('app_settings').upsert({
+      key: 'job_applications',
+      value: JSON.stringify(updatedList),
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
